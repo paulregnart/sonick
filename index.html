@@ -19,6 +19,7 @@
       font-family: "Courier New", "Lucida Console", monospace;
       -webkit-user-select: none;
       user-select: none;
+      touch-action: none;
     }
 
     #game-wrap {
@@ -30,6 +31,59 @@
         radial-gradient(circle at 20% 20%, #2d2f63 0%, transparent 45%),
         radial-gradient(circle at 80% 70%, #1e5a64 0%, transparent 40%),
         linear-gradient(180deg, #3d5ac9 0%, #5fb8ff 45%, #89d9ff 100%);
+    }
+
+    #touch-ui {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      display: none;
+      justify-content: space-between;
+      align-items: flex-end;
+      padding: 12px;
+      z-index: 20;
+      pointer-events: none;
+    }
+
+    #touch-left,
+    #touch-right {
+      display: flex;
+      gap: 10px;
+      pointer-events: auto;
+    }
+
+    .touch-btn {
+      width: 62px;
+      height: 62px;
+      border-radius: 16px;
+      border: 2px solid rgba(255, 255, 255, 0.35);
+      background: rgba(0, 0, 0, 0.4);
+      color: #fff;
+      font: bold 24px "Courier New", monospace;
+      display: grid;
+      place-items: center;
+      box-shadow: 0 6px 12px rgba(0, 0, 0, 0.3);
+      -webkit-tap-highlight-color: transparent;
+      touch-action: none;
+    }
+
+    .touch-btn.small {
+      width: 56px;
+      height: 56px;
+      font-size: 17px;
+    }
+
+    .touch-btn.active {
+      transform: translateY(2px) scale(0.97);
+      background: rgba(255, 214, 112, 0.35);
+      border-color: rgba(255, 245, 200, 0.8);
+    }
+
+    @media (max-width: 900px), (pointer: coarse) {
+      #touch-ui {
+        display: flex;
+      }
     }
 
     #game {
@@ -47,6 +101,17 @@
 <body>
   <div id="game-wrap">
     <canvas id="game" width="800" height="450" aria-label="Sonick game canvas"></canvas>
+  </div>
+  <div id="touch-ui" aria-hidden="true">
+    <div id="touch-left">
+      <button class="touch-btn" data-control="left">◀</button>
+      <button class="touch-btn" data-control="right">▶</button>
+    </div>
+    <div id="touch-right">
+      <button class="touch-btn" data-control="down">▼</button>
+      <button class="touch-btn" data-control="jump">▲</button>
+      <button class="touch-btn small" data-control="run">RUN</button>
+    </div>
   </div>
 
   <script>
@@ -328,6 +393,11 @@
       justClick: false,
     };
 
+    const mobile = {
+      enabled: window.matchMedia("(pointer: coarse)").matches || window.innerWidth <= 900,
+      qualityScale: window.matchMedia("(pointer: coarse)").matches ? 0.8 : 1,
+    };
+
     function mapKey(key, down) {
       if (key === "ArrowLeft") input.left = down;
       else if (key === "ArrowRight") input.right = down;
@@ -357,6 +427,51 @@
       input.justClick = true;
       ensureAudio();
     });
+
+    canvas.addEventListener("touchstart", (e) => {
+      e.preventDefault();
+      input.justClick = true;
+      ensureAudio();
+    }, { passive: false });
+
+    const touchButtons = document.querySelectorAll(".touch-btn");
+    function setTouchControl(control, active) {
+      if (control === "left") input.left = active;
+      else if (control === "right") input.right = active;
+      else if (control === "down") input.down = active;
+      else if (control === "run") input.run = active;
+      else if (control === "jump") {
+        if (active) input.justUp = true;
+        input.up = active;
+      }
+    }
+
+    function bindTouchButton(btn) {
+      const control = btn.dataset.control;
+      const start = (e) => {
+        e.preventDefault();
+        ensureAudio();
+        btn.classList.add("active");
+        setTouchControl(control, true);
+      };
+      const end = (e) => {
+        e.preventDefault();
+        btn.classList.remove("active");
+        setTouchControl(control, false);
+      };
+      btn.addEventListener("pointerdown", start);
+      btn.addEventListener("pointerup", end);
+      btn.addEventListener("pointercancel", end);
+      btn.addEventListener("pointerleave", end);
+    }
+
+    for (let i = 0; i < touchButtons.length; i += 1) {
+      bindTouchButton(touchButtons[i]);
+    }
+
+    window.addEventListener("touchmove", (e) => {
+      if (mobile.enabled) e.preventDefault();
+    }, { passive: false });
 
     // ------------------------------
     // Game state
@@ -1115,7 +1230,8 @@
 
       if (biome.name === "Space") {
         ctx.fillStyle = "rgba(255,255,255,0.75)";
-        for (let i = 0; i < 90; i += 1) {
+        const starCount = mobile.qualityScale < 1 ? 56 : 90;
+        for (let i = 0; i < starCount; i += 1) {
           const sx = ((i * 97) - (cameraX * 0.08 % 997) + 997) % 997;
           const sy = (i * 53) % 320;
           ctx.fillRect(sx, sy + (i % 3), 2, 2);
@@ -1243,11 +1359,12 @@
     }
 
     function drawSparkles(cameraX) {
-      for (let i = 0; i < game.sparkles.length; i += 1) {
+      const stride = mobile.qualityScale < 1 ? 2 : 1;
+      for (let i = 0; i < game.sparkles.length; i += stride) {
         const s = game.sparkles[i];
         const life = s.max || 0.3;
         const p = 1 - s.t / life;
-        const rays = 6;
+        const rays = mobile.qualityScale < 1 ? 4 : 6;
         const r = 4 + p * 10;
         const a = 1 - p;
         ctx.strokeStyle = `rgba(255, 245, 180, ${a.toFixed(3)})`;
@@ -1511,9 +1628,9 @@
       drawPixelText("Porcupine Platform Quest", BASE_W / 2, 208, 24, "#e8f8ff", "center");
       const blink = Math.floor(performance.now() * 0.005) % 2 === 0;
       if (blink) {
-        drawPixelText("Press SPACE to start", BASE_W / 2, 285, 26, "#ffffff", "center");
+        drawPixelText(mobile.enabled ? "Tap to start" : "Press SPACE to start", BASE_W / 2, 285, 26, "#ffffff", "center");
       }
-      drawPixelText("Arrows: Move / Jump / Duck  |  Shift: Run", BASE_W / 2, 334, 16, "#d9ecff", "center");
+      drawPixelText(mobile.enabled ? "Touch buttons: Move / Jump / Duck / Run" : "Arrows: Move / Jump / Duck  |  Shift: Run", BASE_W / 2, 334, 16, "#d9ecff", "center");
     }
 
     function drawLevelCompleteOverlay() {
